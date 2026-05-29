@@ -18,7 +18,15 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ limit: '2mb', extended: true }));
 app.use('/uploads', express.static('uploads'));
 
-const DB_FILE = process.env.DB_FILE || 'db.json';
+// Սա կստուգի՝ աշխատում ենք Render-ում, թե տեղական համակարգչում
+const isRender = process.env.RENDER === 'true'; 
+const DB_FILE = isRender ? '/var/data/db.json' : 'db.json';
+const UPLOADS_DIR = isRender ? '/var/data/uploads' : 'uploads';
+
+// Սա կստեղծի uploads թղթապանակը, եթե չկա
+if (isRender && !fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+}
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
 const ADMIN_PIN   = process.env.ADMIN_PIN;
