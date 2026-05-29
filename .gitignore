@@ -1,4 +1,12 @@
-db.json
-uploads/
-pass.env.local
+# Node.js
 node_modules/
+npm-debug.log
+
+# Ձեր տվյալները (որոնք կպահվեն Render-ի Disk-ում)
+db.json
+db.json.backup
+uploads/
+
+# Գաղտնի բանալիներ
+pass.env.local
+.env
