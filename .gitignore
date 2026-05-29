@@ -1,0 +1,4 @@
+db.json
+uploads/
+pass.env.local
+node_modules/
