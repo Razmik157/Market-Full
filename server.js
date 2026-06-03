@@ -34,9 +34,8 @@ const ALLOWED_EXTENSIONS = ['.stl', '.obj', '.glb', '.gltf', '.3mf', '.jpg', '.j
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        if (!fs.existsSync('uploads')) fs.mkdirSync('uploads');
-        cb(null, 'uploads/');
-    },
+    cb(null, UPLOADS_DIR); // օգտագործեք UPLOADS_DIR-ը
+},
     filename: (req, file, cb) => {
         const safeName = Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
         cb(null, safeName);
