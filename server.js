@@ -10,6 +10,16 @@ const jwt = require('jsonwebtoken');
 
 const app = express();
 
+// --- ԱՎԵԼԱՑՐԵՔ ՍԱ ՀԵՆՑ ԱՅՍՏԵՂ ---
+const isRender = process.env.RENDER === 'true'; 
+const UPLOADS_DIR = isRender ? '/var/data/uploads' : 'uploads';
+
+// Եթե տեղական է, ստեղծում ենք թղթապանակը
+if (!isRender && !fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR);
+}
+// -----------------------------
+
 //app.use(helmet({
 //crossOriginResourcePolicy: { policy: "cross-origin" }
 //}));
