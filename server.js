@@ -16,6 +16,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ limit: '2mb', extended: true }));
+app.use(express.static('public')); // Հիմնական կայքը
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 const DB_FILE = process.env.DB_FILE || 'db.json';
