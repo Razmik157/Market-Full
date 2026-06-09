@@ -19,13 +19,8 @@ if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// ՈՒՂՂՈՒՄ. Static ֆայլերի դասավորությունը՝ հիմնական կայքը և նկարները
-app.use(express.static('public')); 
+app.use(express.static(__dirname)); // Սա բեռնում է ամեն ինչ նույն թղթապանակից
 app.use('/uploads', express.static(UPLOADS_DIR));
-
-//app.use(helmet({
-//crossOriginResourcePolicy: { policy: "cross-origin" }
-//}));
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ limit: '2mb', extended: true }));
@@ -471,7 +466,7 @@ app.use((err, req, res, next) => {
 
 // ─── START ─────────────────────────────────────────────
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+    res.sendFile(path.join(__dirname, 'Market.html')); // Ուղիղ ֆայլը
 });
 
 const PORT = process.env.PORT || 3000;
