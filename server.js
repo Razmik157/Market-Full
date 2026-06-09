@@ -12,8 +12,7 @@ const app = express();
 
 // --- ՈՒՂՂՈՒՄ. Render-ի ֆայլային համակարգի կարգավորում ---
 const isRender = process.env.RENDER === 'true'; 
-const UPLOADS_DIR = isRender ? '/var/data/uploads' : 'uploads';
-
+const UPLOADS_DIR = path.join(__dirname, 'uploads');
 // Ստեղծում ենք թղթապանակը, եթե չկա
 if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
