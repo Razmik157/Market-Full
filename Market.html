@@ -662,19 +662,7 @@
         checkUserStatus();
     }
 
-    function updateStats() {
-        const statsEl = document.getElementById('statsContent');
-        if (!products.length) { statsEl.innerHTML = 'Ապրանք չկա'; return; }
-        const cats = [...new Set(products.map(p => p.cat))];
-        const minP = Math.min(...products.map(p => p.price));
-        const maxP = Math.max(...products.map(p => p.price));
-        statsEl.innerHTML = `
-            <div>📦 Ապրանք՝ <b>${escapeHtml(products.length.toString())}</b></div>
-            <div>🏷️ Կատ.՝ <b>${escapeHtml(cats.length.toString())}</b></div>
-            <div>💰 Ամենաէժան՝ <b>${minP.toLocaleString()} ֏</b></div>
-            <div>💎 Ամենաթանկ՝ <b>${maxP.toLocaleString()} ֏</b></div>`;
-    }
-
+   
     function applyFilters() {
         const maxPrice = document.getElementById('priceRange').value;
         const search = document.getElementById('searchInput').value.toLowerCase().trim();
