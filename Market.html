@@ -495,7 +495,8 @@
     // CONFIG — Dynamic API URL
     // ═══════════════════════════════════════
     const host = window.location.hostname || 'localhost';
-    const API_URL = `http://${host}:3000`;
+    // Փոխարինիր հին տողը սրանով
+    const API_URL = `https://${host}`;
     
     // ✅ Escape HTML to prevent XSS attacks
     function escapeHtml(text) {
