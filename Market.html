@@ -299,7 +299,7 @@
             <div class="tg-avatar">⚙️</div>
             <div class="tg-header-info">
                 <h3>Techno Lab Աջակցություն</h3>
-                <span id="chatOnlineStatus">Գրեք հաղորդագրություն</span>
+                <span id="chatOnlineStatus">Գրեք հաղորդագրութիւն</span>
             </div>
             <button class="tg-close" onclick="closeChat()">×</button>
         </div>
@@ -317,7 +317,7 @@
         <div class="tg-input-area">
             <input type="file" id="chatAttachment" style="display:none;" accept=".stl,.obj,.glb,.gltf,.3mf,image/*,.pdf,.zip">
             <button onclick="document.getElementById('chatAttachment').click()" title="Ֆայլ կցել" style="background:#10b981;color:white;border:none;border-radius:50%;width:42px;height:42px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:16px;transition:0.2s;">📎</button>
-            <input type="text" id="chatInput" placeholder="Հաղորդագրություն..." onkeydown="if(event.key==='Enter') sendMessage()">
+            <input type="text" id="chatInput" placeholder="Հաղորդագրութիւն..." onkeydown="if(event.key==='Enter') sendMessage()">
             <button class="tg-send-btn" onclick="sendMessage()">➤</button>
         </div>
     </div>
@@ -381,7 +381,7 @@
             </div>
         </div>
         <button class="btn-action btn-buy" onclick="openMyOrders(); closeModal('profileModal');" style="margin-bottom: 8px;">📦 Իմ Պատվերները</button>
-        <button class="btn-action" onclick="openChat(); closeModal('profileModal');" style="background: var(--secondary); color: white; width: 100%; padding: 12px; border-radius: 10px; border: none; cursor: pointer; font-weight: 700; margin-bottom: 8px;">💬 Հաղորդագրություն</button>
+        <button class="btn-action" onclick="openChat(); closeModal('profileModal');" style="background: var(--secondary); color: white; width: 100%; padding: 12px; border-radius: 10px; border: none; cursor: pointer; font-weight: 700; margin-bottom: 8px;">💬 Հաղորդագրութիւն</button>
         <button onclick="logout()" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--danger); background: none; color: var(--danger); cursor: pointer; font-weight: 700; margin-bottom: 8px; transition: 0.2s;" onmouseover="this.style.background='rgba(244,63,94,0.1)'" onmouseout="this.style.background='none'">🚪 Դուրս գալ</button>
         <button onclick="closeModal('profileModal')" style="width: 100%; padding: 8px; border: none; background: none; color: var(--gray); cursor: pointer; font-size: 13px;">Փակել</button>
     </div>
@@ -448,7 +448,7 @@
                 <button onclick="logout()" style="color: var(--danger); background: rgba(244,63,94,0.1); border: 1px solid var(--danger); cursor: pointer; font-weight: 700; padding: 8px 16px; border-radius: 8px; transition:0.2s;">🚪 Դուրս գալ</button>
             </div>
             <div class="admin-nav">
-                <button class="admin-nav-btn active" onclick="switchAdminTab('addProduct', event)">➕ Ապրանք ավելացնել</button>
+                <button class="admin-nav-btn active" onclick="switchAdminTab('addProduct', event)">➕ Ապրանք աւելացնել</button>
                 <button class="admin-nav-btn" onclick="switchAdminTab('viewOrders', event)">📦 Պատվերներ</button>
                 <button class="admin-nav-btn" onclick="switchAdminTab('viewMessages', event)">💬 Նամակներ</button>
             </div>
@@ -727,7 +727,7 @@ function updateStats() {
                 <h1 style="margin:10px 0; font-size:28px;">${escapeHtml(p.title)}</h1>
                 <p style="margin:15px 0; color:var(--gray); line-height:1.7;">${escapeHtml(p.desc || 'Նկարագրութիւն չկա')}</p>
                 <div style="font-size:28px; font-weight:800; color:var(--primary); margin-bottom:20px;">${p.price.toLocaleString()} ֏</div>
-                <button class="btn-action btn-buy" style="max-width:280px;" onclick="addToCart(${p.id})">🛒 Ավելացնել Զամբիղ</button>
+                <button class="btn-action btn-buy" style="max-width:280px;" onclick="addToCart(${p.id})">🛒 Աւելացնել Զամբիղ</button>
             </div>`;
     }
 
@@ -975,7 +975,7 @@ function updateStats() {
             const wasAtBottom = box.scrollHeight - box.scrollTop <= box.clientHeight + 40;
 
             if (!msgs.length) {
-                box.innerHTML = '<div class="tg-empty">💬 Դեռ հաղորդագրություն չկա<br><span style="font-size:12px;">Գրեք ձեր հարցը</span></div>';
+                box.innerHTML = '<div class="tg-empty">💬 Դեռ հաղորդագրութիւն չկա<br><span style="font-size:12px;">Գրեք ձեր հարցը</span></div>';
                 return;
             }
 
@@ -1169,7 +1169,7 @@ function updateStats() {
                         <h4>${escapeHtml(c.name)}</h4>
                         <p>${lastMsg ? (escapeHtml(lastMsg.message) || '📎 Ֆայլ').substring(0, 30) : '—'}</p>
                     </div>`;
-                }).join('') || '<div style="padding:15px; font-size:12px; color:var(--gray);">Հաղորդագրություն չկա</div>');
+                }).join('') || '<div style="padding:15px; font-size:12px; color:var(--gray);">Հաղորդագրութիւն չկա</div>');
             if (activeAdminConv) {
                 const conv = convs.find(c => c.email === activeAdminConv);
                 if (conv) renderAdminChat(conv.messages, conv.name);
@@ -1201,7 +1201,7 @@ function updateStats() {
                         <div class="tg-time">${escapeHtml(m.date)}</div>
                     </div>
                 </div>`;
-        }).join('') || '<div style="text-align:center; color:var(--gray); font-size:13px; padding:20px;">Հաղորդագրություն չկա</div>';
+        }).join('') || '<div style="text-align:center; color:var(--gray); font-size:13px; padding:20px;">Հաղորդագրութիւն չկա</div>';
         if (wasAtBottom) box.scrollTop = box.scrollHeight;
     }
 
