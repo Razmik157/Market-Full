@@ -218,25 +218,33 @@ app.post('/admin/login', adminBruteforceLimiter, (req, res) => {
 });
 
 // ─── PRODUCTS ──────────────────────────────────────────
+// Այս էնդփոյնթը միայն կարդում է PostgreSQL-ից
 app.get('/products', async (req, res) => {
     try {
-        // Անմիջապես կարդում ենք PostgreSQL-ից
         const { rows } = await pool.query('SELECT * FROM products');
         res.json(rows);
     } catch (err) {
-        console.error("GET Products error:", err);
-        res.status(500).json({ error: "Չհաջողվեց կարդալ բազայից" });
+        console.error("GET Error:", err);
+        res.status(500).json({ error: "DB Error" });
     }
 });
 
+// Այս էնդփոյնթը միայն գրում է PostgreSQL-ի մեջ
 app.post('/products', adminJWTAuth, upload.single('image'), async (req, res) => {
-    const { title, desc, cat, price } = req.body;
-    if (!title || !price) return res.status(400).json({ error: "title և price պարտադիր են" });
-
-    let imgUrl = 'https://via.placeholder.com/400';
-    if (req.file) {
-        imgUrl = `/uploads/${req.file.filename}`;
+    try {
+        const { title, desc, cat, price } = req.body;
+        const imgUrl = req.file ? `/uploads/${req.file.filename}` : 'https://via.placeholder.com/400';
+        
+        await pool.query(
+            'INSERT INTO products (id, title, description, category, price, image_url) VALUES ($1, $2, $3, $4, $5, $6)',
+            [Date.now(), title, desc, cat, price, imgUrl]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error("POST Error:", err);
+        res.status(500).json({ error: "DB Insert Error" });
     }
+});
 
     const db = await readDB();
     const newProduct = {
