@@ -8,19 +8,17 @@ const helmet = require('helmet');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 
-// ՓՈՓՈԽՎԱԾ. Ավելացված է pg գրադարանը
-const { Pool } = require('pg');
-const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
-
 const app = express();
 
-const isRender = process.env.RENDER === 'true'; 
+// --- ՈՒՂՂՈՒՄ. Render-ի ֆայլային համակարգի կարգավորում ---
+const isRender = process.env.RENDER === 'true'; 
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
+// Ստեղծում ենք թղթապանակը, եթե չկա
 if (!fs.existsSync(UPLOADS_DIR)) {
-    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-app.use(express.static(__dirname)); 
+app.use(express.static(__dirname)); // Սա բեռնում է ամեն ինչ նույն թղթապանակից
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -29,10 +27,10 @@ app.use(express.urlencoded({ limit: '2mb', extended: true }));
 const DB_FILE = process.env.DB_FILE || 'db.json';
 
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
-const ADMIN_PIN   = process.env.ADMIN_PIN;
+const ADMIN_PIN   = process.env.ADMIN_PIN;
 if (!ADMIN_TOKEN || !ADMIN_PIN) {
-    console.error("❌ ADMIN_TOKEN կամ ADMIN_PIN .env-ում չկա։ Կանգնեցնում եմ.");
-    process.exit(1);
+    console.error("❌ ADMIN_TOKEN կամ ADMIN_PIN .env-ում չկա։ Կանգնեցնում եմ.");
+    process.exit(1);
 }
 
 const JWT_SECRET = process.env.JWT_SECRET || 'temp-jwt-secret-change-in-production-' + Date.now();
@@ -41,445 +39,439 @@ const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.stl', '.obj', '.glb', '.gltf', '.3mf', '.jpg', '.jpeg', '.png', '.pdf', '.zip'];
 
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, UPLOADS_DIR);
-    },
-    filename: (req, file, cb) => {
-        const safeName = Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-        cb(null, safeName);
-    }
+    destination: (req, file, cb) => {
+        cb(null, UPLOADS_DIR); // օգտագործում ենք սահմանված UPLOADS_DIR-ը
+    },
+    filename: (req, file, cb) => {
+        const safeName = Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
+        cb(null, safeName);
+    }
 });
 
 const fileFilter = (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (ALLOWED_EXTENSIONS.includes(ext)) {
-        cb(null, true);
-    } else {
-        cb(new Error('Ֆայլի տեսակը չի թույլատրվում'), false);
-    }
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_EXTENSIONS.includes(ext)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Ֆայլի տեսակը չի թույլատրվում'), false);
+    }
 };
 
 const upload = multer({ storage, limits: { fileSize: MAX_FILE_SIZE }, fileFilter });
 const uploadFields = upload.fields([
-    { name: 'image', maxCount: 1 },
-    { name: 'attachment', maxCount: 1 }
+    { name: 'image', maxCount: 1 },
+    { name: 'attachment', maxCount: 1 }
 ]);
 
 const loginLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 10,
-    message: { error: "Չափազանց շատ փորձեր։ Փորձեք մի քանի րոպե անց" }
+    windowMs: 15 * 60 * 1000,
+    max: 10,
+    message: { error: "Չափազանց շատ փորձեր։ Փորձեք մի քանի րոպե անց" }
 });
 
 const chatLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 25
+    windowMs: 60 * 1000,
+    max: 25
 });
 
 const strictRateLimiter = rateLimit({
-    windowMs: 60 * 1000,
-    max: 20,
-    message: { error: "Too many requests. Please slow down." }
+    windowMs: 60 * 1000,
+    max: 20,
+    message: { error: "Too many requests. Please slow down." }
 });
 
+// ✅ ADMIN BRUTEFORCE PROTECTION
 const adminBruteforceLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 5,
-    message: { error: "Չափազանց շատ սխալ փորձեր։ Փորձեք 15 րոպե անց" },
-    skipSuccessfulRequests: true,
-    keyGenerator: (req) => req.ip || req.connection.remoteAddress
+    windowMs: 15 * 60 * 1000,
+    max: 5,
+    message: { error: "Չափազանց շատ սխալ փորձեր։ Փորձեք 15 րոպե անց" },
+    skipSuccessfulRequests: true,
+    keyGenerator: (req) => req.ip || req.connection.remoteAddress
 });
 
+// ✅ Failed attempts tracking
 const failedAttempts = new Map();
 
 function checkAndBlockIP(ip) {
-    const now = Date.now();
-    const record = failedAttempts.get(ip);
-    if (record && record.blockUntil && now < record.blockUntil) {
-        const remainingMinutes = Math.ceil((record.blockUntil - now) / 60000);
-        return { blocked: true, remainingMinutes };
-    }
-    if (record && record.blockUntil && now >= record.blockUntil) {
-        failedAttempts.delete(ip);
-    }
-    return { blocked: false };
+    const now = Date.now();
+    const record = failedAttempts.get(ip);
+    if (record && record.blockUntil && now < record.blockUntil) {
+        const remainingMinutes = Math.ceil((record.blockUntil - now) / 60000);
+        return { blocked: true, remainingMinutes };
+    }
+    if (record && record.blockUntil && now >= record.blockUntil) {
+        failedAttempts.delete(ip);
+    }
+    return { blocked: false };
 }
 
 function recordFailedAttempt(ip) {
-    const now = Date.now();
-    let record = failedAttempts.get(ip);
-    if (!record) {
-        record = { count: 1, lastAttempt: now, blockUntil: null };
-    } else {
-        record.count++;
-        record.lastAttempt = now;
-        if (record.count >= 5 && !record.blockUntil) {
-            record.blockUntil = now + (15 * 60 * 1000);
-        } else if (record.count >= 10 && record.blockUntil === now + (15 * 60 * 1000)) {
-            record.blockUntil = now + (60 * 60 * 1000);
-        } else if (record.count >= 20) {
-            record.blockUntil = now + (24 * 60 * 60 * 1000);
-        }
-    }
-    failedAttempts.set(ip, record);
-    return record;
+    const now = Date.now();
+    let record = failedAttempts.get(ip);
+    if (!record) {
+        record = { count: 1, lastAttempt: now, blockUntil: null };
+    } else {
+        record.count++;
+        record.lastAttempt = now;
+        if (record.count >= 5 && !record.blockUntil) {
+            record.blockUntil = now + (15 * 60 * 1000);
+        } else if (record.count >= 10 && record.blockUntil === now + (15 * 60 * 1000)) {
+            record.blockUntil = now + (60 * 60 * 1000);
+        } else if (record.count >= 20) {
+            record.blockUntil = now + (24 * 60 * 60 * 1000);
+        }
+    }
+    failedAttempts.set(ip, record);
+    return record;
 }
 
 function clearFailedAttempts(ip) {
-    failedAttempts.delete(ip);
+    failedAttempts.delete(ip);
 }
 
-// ─── DB (ՓՈՓՈԽՎԱԾ) ────────────────────────────────────────────────
-const readDB = async () => {
-    if (pool) {
-        const { rows: products } = await pool.query('SELECT * FROM products');
-        const { rows: orders } = await pool.query('SELECT * FROM orders');
-        const { rows: users } = await pool.query('SELECT * FROM users');
-        const { rows: messages } = await pool.query('SELECT * FROM messages');
-        return { products, orders, users, messages };
-    }
-    if (!fs.existsSync(DB_FILE)) {
-        const init = { products: [], orders: [], users: [], messages: [] };
-        fs.writeFileSync(DB_FILE, JSON.stringify(init, null, 2));
-        return init;
-    }
-    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    if (!data.users)    data.users    = [];
-    if (!data.orders)   data.orders   = [];
-    if (!data.messages) data.messages = [];
-    return data;
+// ─── DB ────────────────────────────────────────────────
+const readDB = () => {
+    if (!fs.existsSync(DB_FILE)) {
+        const init = { products: [], orders: [], users: [], messages: [] };
+        fs.writeFileSync(DB_FILE, JSON.stringify(init, null, 2));
+        return init;
+    }
+    const data = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    if (!data.users)    data.users    = [];
+    if (!data.orders)   data.orders   = [];
+    if (!data.messages) data.messages = [];
+    return data;
 };
 
-const writeDB = async (data) => {
-    fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-};
+const writeDB = (data) => fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+
 // ─── ADMIN AUTH ────────────────────────────────────────
 const adminAuth = (req, res, next) => {
-    const token = req.headers['x-admin-token'];
-    const pin   = req.headers['x-admin-pin'];
-    if (token === ADMIN_TOKEN && pin === ADMIN_PIN) {
-        next();
-    } else {
-        res.status(403).json({ error: "Access Denied" });
-    }
+    const token = req.headers['x-admin-token'];
+    const pin   = req.headers['x-admin-pin'];
+    if (token === ADMIN_TOKEN && pin === ADMIN_PIN) {
+        next();
+    } else {
+        res.status(403).json({ error: "Access Denied" });
+    }
 };
 
 const adminJWTAuth = (req, res, next) => {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-        const token = authHeader.split(' ')[1];
-        try {
-            const decoded = jwt.verify(token, JWT_SECRET);
-            if (decoded.role === 'admin') {
-                return next();
-            }
-        } catch(e) {}
-    }
-    adminAuth(req, res, next);
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+        const token = authHeader.split(' ')[1];
+        try {
+            const decoded = jwt.verify(token, JWT_SECRET);
+            if (decoded.role === 'admin') {
+                return next();
+            }
+        } catch(e) {}
+    }
+    adminAuth(req, res, next);
 };
 
 // ✅ UPDATED: Admin login with bruteforce protection
 app.post('/admin/login', adminBruteforceLimiter, (req, res) => {
-    const clientIp = req.ip || req.connection.remoteAddress;
-    
-    const { blocked, remainingMinutes } = checkAndBlockIP(clientIp);
-    if (blocked) {
-        return res.status(429).json({ 
-            error: `Արգելափակված եք ${remainingMinutes} րոպեով`,
-            blockedUntil: remainingMinutes
-        });
-    }
-    
-    const { pin } = req.body;
-    if (!pin) {
-        recordFailedAttempt(clientIp);
-        return res.status(400).json({ error: "PIN պարտադիր է" });
-    }
-    
-    if (pin === ADMIN_PIN) {
-        clearFailedAttempts(clientIp);
-        const adminToken = jwt.sign(
-            { role: 'admin', timestamp: Date.now(), ip: clientIp },
-            JWT_SECRET,
-            { expiresIn: '2h' }
-        );
-        res.json({ success: true, token: adminToken });
-    } else {
-        const record = recordFailedAttempt(clientIp);
-        const remainingAttempts = Math.max(0, 5 - record.count);
-        res.status(401).json({ 
-            error: "Invalid admin PIN",
-            remainingAttempts: remainingAttempts,
-            message: remainingAttempts > 0 
-                ? `Մնացել է ${remainingAttempts} փորձ` 
-                : "Պիտի սպասեք 15 րոպե"
-        });
-    }
+    const clientIp = req.ip || req.connection.remoteAddress;
+    
+    const { blocked, remainingMinutes } = checkAndBlockIP(clientIp);
+    if (blocked) {
+        return res.status(429).json({ 
+            error: `Արգելափակված եք ${remainingMinutes} րոպեով`,
+            blockedUntil: remainingMinutes
+        });
+    }
+    
+    const { pin } = req.body;
+    if (!pin) {
+        recordFailedAttempt(clientIp);
+        return res.status(400).json({ error: "PIN պարտադիր է" });
+    }
+    
+    if (pin === ADMIN_PIN) {
+        clearFailedAttempts(clientIp);
+        const adminToken = jwt.sign(
+            { role: 'admin', timestamp: Date.now(), ip: clientIp },
+            JWT_SECRET,
+            { expiresIn: '2h' }
+        );
+        res.json({ success: true, token: adminToken });
+    } else {
+        const record = recordFailedAttempt(clientIp);
+        const remainingAttempts = Math.max(0, 5 - record.count);
+        res.status(401).json({ 
+            error: "Invalid admin PIN",
+            remainingAttempts: remainingAttempts,
+            message: remainingAttempts > 0 
+                ? `Մնացել է ${remainingAttempts} փորձ` 
+                : "Պիտի սպասեք 15 րոպե"
+        });
+    }
 });
 
 // ─── PRODUCTS ──────────────────────────────────────────
-// Այս էնդփոյնթը միայն կարդում է PostgreSQL-ից
-app.get('/products', async (req, res) => {
-    try {
-        const { rows } = await pool.query('SELECT * FROM products');
-        res.json(rows);
-    } catch (err) {
-        console.error("GET Error:", err);
-        res.status(500).json({ error: "DB Error" });
-    }
+app.get('/products', (req, res) => {
+    const db = readDB();
+    res.json(db.products);
 });
 
-// Այս էնդփոյնթը միայն գրում է PostgreSQL-ի մեջ
-app.post('/products', adminJWTAuth, upload.single('image'), async (req, res) => {
-    try {
-        const { title, desc, cat, price } = req.body;
-        const imgUrl = req.file ? `/uploads/${req.file.filename}` : 'https://via.placeholder.com/400';
-        
-        await pool.query(
-            'INSERT INTO products (id, title, description, category, price, image_url) VALUES ($1, $2, $3, $4, $5, $6)',
-            [Date.now(), title, desc, cat, price, imgUrl]
-        );
-        res.json({ success: true });
-    } catch (err) {
-        console.error("POST Error:", err);
-        res.status(500).json({ error: "DB Insert Error" });
-    }
+app.post('/products', adminJWTAuth, upload.single('image'), (req, res) => {
+    const { title, desc, cat, price } = req.body;
+    if (!title || !price) return res.status(400).json({ error: "title և price պարտադիր են" });
+
+    let imgUrl = 'https://via.placeholder.com/400';
+    if (req.file) {
+        imgUrl = `/uploads/${req.file.filename}`;
+    }
+
+    const db = readDB();
+    const newProduct = {
+        id: Date.now(),
+        title: title.substring(0, 200),
+        desc: (desc || "").substring(0, 1000),
+        cat: cat || "General",
+        price: parseFloat(price),
+        img: imgUrl
+    };
+    db.products.push(newProduct);
+    writeDB(db);
+    res.json(newProduct);
 });
 
-app.delete('/products/:id', adminJWTAuth, async (req, res) => {
-    const db = await readDB();
-    const product = db.products.find(p => p.id == req.params.id);
-    if (product && product.img && product.img.startsWith('/uploads/')) {
-        const filePath = path.join(UPLOADS_DIR, path.basename(product.img));
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-    }
-    db.products = db.products.filter(p => p.id != req.params.id);
-    await writeDB(db);
-    res.json({ success: true });
+app.delete('/products/:id', adminJWTAuth, (req, res) => {
+    const db = readDB();
+    const product = db.products.find(p => p.id == req.params.id);
+    if (product && product.img && product.img.startsWith('/uploads/')) {
+        const filePath = path.join(UPLOADS_DIR, path.basename(product.img));
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    }
+    db.products = db.products.filter(p => p.id != req.params.id);
+    writeDB(db);
+    res.json({ success: true });
 });
 
 // ─── CLIENT AUTH ───────────────────────────────────────
-app.post('/register-client', loginLimiter, async (req, res) => {
-    const { name, email } = req.body;
-    if (!name || !email) return res.status(400).json({ success: false, message: "Անուն և email պարտադիր են" });
-    const cleanEmail = email.toLowerCase().trim();
-    const db = await readDB();
+app.post('/register-client', loginLimiter, (req, res) => {
+    const { name, email } = req.body;
+    if (!name || !email) return res.status(400).json({ success: false, message: "Անուն և email պարտադիր են" });
+    const cleanEmail = email.toLowerCase().trim();
+    const db = readDB();
 
-    if (db.users.find(u => u.email === cleanEmail)) {
-        return res.status(400).json({ success: false, message: "Այս էլ. փոստը արդեն գրանցված է" });
-    }
+    if (db.users.find(u => u.email === cleanEmail)) {
+        return res.status(400).json({ success: false, message: "Այս էլ. փոստը արդեն գրանցված է" });
+    }
 
-    const newPin = Math.floor(1000 + Math.random() * 9000).toString();
-    const user = { id: Date.now(), name: name.substring(0, 60), email: cleanEmail, pin: newPin, regDate: new Date().toLocaleString() };
-    db.users.push(user);
-    await writeDB(db);
-    res.json({ success: true, pin: newPin });
+    const newPin = Math.floor(1000 + Math.random() * 9000).toString();
+    const user = { id: Date.now(), name: name.substring(0, 60), email: cleanEmail, pin: newPin, regDate: new Date().toLocaleString() };
+    db.users.push(user);
+    writeDB(db);
+    res.json({ success: true, pin: newPin });
 });
 
-app.post('/login-client', loginLimiter, async (req, res) => {
-    const { email, pin } = req.body;
-    if (!email || !pin) return res.status(400).json({ success: false, message: "email և pin պարտադիր են" });
-    const db = await readDB();
-    const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
-    if (user) {
-        res.json({ success: true, name: user.name });
-    } else {
-        res.status(401).json({ success: false, message: "Սխալ էլ. փոստ կամ PIN" });
-    }
+app.post('/login-client', loginLimiter, (req, res) => {
+    const { email, pin } = req.body;
+    if (!email || !pin) return res.status(400).json({ success: false, message: "email և pin պարտադիր են" });
+    const db = readDB();
+    const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
+    if (user) {
+        res.json({ success: true, name: user.name });
+    } else {
+        res.status(401).json({ success: false, message: "Սխալ էլ. փոստ կամ PIN" });
+    }
 });
 
-app.post('/login-client-jwt', loginLimiter, async (req, res) => {
-    const { email, pin } = req.body;
-    if (!email || !pin) return res.status(400).json({ success: false, message: "email և pin պարտադիր են" });
-    const db = await readDB();
-    const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
-    if (user) {
-        const token = jwt.sign(
-            { id: user.id, email: user.email, name: user.name },
-            JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-        res.json({ success: true, name: user.name, token });
-    } else {
-        res.status(401).json({ success: false, message: "Սխալ էլ. փոստ կամ PIN" });
-    }
+app.post('/login-client-jwt', loginLimiter, (req, res) => {
+    const { email, pin } = req.body;
+    if (!email || !pin) return res.status(400).json({ success: false, message: "email և pin պարտադիր են" });
+    const db = readDB();
+    const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
+    if (user) {
+        const token = jwt.sign(
+            { id: user.id, email: user.email, name: user.name },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+        res.json({ success: true, name: user.name, token });
+    } else {
+        res.status(401).json({ success: false, message: "Սխալ էլ. փոստ կամ PIN" });
+    }
 });
 
-app.get('/my-orders/:email', async (req, res) => {
-    const db = await readDB();
-    const email = req.params.email.toLowerCase().trim();
-    const pin = req.query.pin;
-    if (!pin) return res.status(400).json({ error: "PIN պարտադիր է" });
-    const user = db.users.find(u => u.email === email && u.pin === pin);
-    if (!user) return res.status(401).json({ error: "Access Denied" });
-    const userOrders = db.orders.filter(o => o.email.toLowerCase().trim() === email);
-    res.json(userOrders);
+app.get('/my-orders/:email', (req, res) => {
+    const db = readDB();
+    const email = req.params.email.toLowerCase().trim();
+    const pin = req.query.pin;
+    if (!pin) return res.status(400).json({ error: "PIN պարտադիր է" });
+    const user = db.users.find(u => u.email === email && u.pin === pin);
+    if (!user) return res.status(401).json({ error: "Access Denied" });
+    const userOrders = db.orders.filter(o => o.email.toLowerCase().trim() === email);
+    res.json(userOrders);
 });
 
-app.post('/orders', strictRateLimiter, async (req, res) => {
-    const { customer, email, pin, items, total } = req.body;
-    if (!email || !pin) return res.status(400).json({ error: "email և pin պարտադիր են" });
+app.post('/orders', strictRateLimiter, (req, res) => {
+    const { customer, email, pin, items, total } = req.body;
+    if (!email || !pin) return res.status(400).json({ error: "email և pin պարտադիր են" });
 
-    const db = await readDB();
+    const db = readDB();
 
-    const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
-    if (!user) return res.status(401).json({ error: "Սխալ email կամ PIN" });
+    const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
+    if (!user) return res.status(401).json({ error: "Սխալ email կամ PIN" });
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ error: "Ապրանք չկա" });
-    }
+    if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ error: "Ապրանք չկա" });
+    }
 
-    const newOrder = {
-        id: Date.now(),
-        customer: (customer || user.name).substring(0, 100),
-        email: email.toLowerCase().trim(),
-        items,
-        total: parseFloat(total) || 0,
-        modelUrl: req.body.modelUrl || null,
-        date: new Date().toLocaleString(),
-        status: 'Ընդունված'
-    };
-    db.orders.push(newOrder);
-    await writeDB(db);
-    res.json({ success: true });
+    const newOrder = {
+        id: Date.now(),
+        customer: (customer || user.name).substring(0, 100),
+        email: email.toLowerCase().trim(),
+        items,
+        total: parseFloat(total) || 0,
+        modelUrl: req.body.modelUrl || null,
+        date: new Date().toLocaleString(),
+        status: 'Ընդունված'
+    };
+    db.orders.push(newOrder);
+    writeDB(db);
+    res.json({ success: true });
 });
 
 // ─── MESSAGES ──────────────────────────────────────────
-app.post('/messages', chatLimiter, upload.single('attachment'), async (req, res) => {
-    const db = await readDB();
-    const email = req.body.email ? req.body.email.toLowerCase().trim() : null;
-    const pin   = req.body.pin || null;
+app.post('/messages', chatLimiter, upload.single('attachment'), (req, res) => {
+    const db = readDB();
+    const email = req.body.email ? req.body.email.toLowerCase().trim() : null;
+    const pin   = req.body.pin || null;
 
-    if (!email || !pin) return res.status(400).json({ error: "email և pin պարտադիր են" });
+    if (!email || !pin) return res.status(400).json({ error: "email և pin պարտադիր են" });
 
-    const user = db.users.find(u => u.email === email && u.pin === pin);
-    if (!user) return res.status(401).json({ error: "Սխալ PIN" });
+    const user = db.users.find(u => u.email === email && u.pin === pin);
+    if (!user) return res.status(401).json({ error: "Սխալ PIN" });
 
-    let attachment = null;
-    if (req.file) {
-        attachment = { name: req.file.originalname, url: `/uploads/${req.file.filename}` };
-    }
+    let attachment = null;
+    if (req.file) {
+        attachment = { name: req.file.originalname, url: `/uploads/${req.file.filename}` };
+    }
 
-    const msg = req.body.message || "";
-    if (!msg.trim() && !attachment) return res.status(400).json({ error: "Հաղորդագրություն կամ ֆայլ պարտադիր է" });
+    const msg = req.body.message || "";
+    if (!msg.trim() && !attachment) return res.status(400).json({ error: "Հաղորդագրություն կամ ֆայլ պարտադիր է" });
 
-    const newMessage = {
-        id: Date.now(),
-        name: user.name,
-        email,
-        pin,
-        message: msg.substring(0, 2000),
-        sender: 'client',
-        attachment,
-        date: new Date().toLocaleString()
-    };
-    db.messages.push(newMessage);
-    await writeDB(db);
-    res.json({ success: true });
+    const newMessage = {
+        id: Date.now(),
+        name: user.name,
+        email,
+        pin,
+        message: msg.substring(0, 2000),
+        sender: 'client',
+        attachment,
+        date: new Date().toLocaleString()
+    };
+    db.messages.push(newMessage);
+    writeDB(db);
+    res.json({ success: true });
 });
 
-app.get('/my-messages/:email', async (req, res) => {
-    const db = await readDB();
-    const clientEmail = req.params.email.toLowerCase().trim();
-    const clientPin   = req.query.pin;
-    if (!clientPin) return res.status(400).json({ error: "PIN պարտադիր է" });
+app.get('/my-messages/:email', (req, res) => {
+    const db = readDB();
+    const clientEmail = req.params.email.toLowerCase().trim();
+    const clientPin   = req.query.pin;
+    if (!clientPin) return res.status(400).json({ error: "PIN պարտադիր է" });
 
-    const user = db.users.find(u => u.email === clientEmail && u.pin === clientPin);
-    if (!user) return res.status(401).json({ error: "Սխալ PIN" });
+    const user = db.users.find(u => u.email === clientEmail && u.pin === clientPin);
+    if (!user) return res.status(401).json({ error: "Սխալ PIN" });
 
-    const userMsgs = db.messages.filter(m => m.email === clientEmail && m.pin === clientPin);
-    res.json(userMsgs);
+    const userMsgs = db.messages.filter(m => m.email === clientEmail && m.pin === clientPin);
+    res.json(userMsgs);
 });
 
 // ─── ADMIN ENDPOINTS ───────────────────────────────────
-app.get('/admin/orders', adminJWTAuth, async (req, res) => {
-    res.json((await readDB()).orders);
+app.get('/admin/orders', adminJWTAuth, (req, res) => {
+    res.json(readDB().orders);
 });
 
-app.post('/admin/update-order-status', adminJWTAuth, async (req, res) => {
-    const { orderId, newStatus } = req.body;
-    const VALID_STATUSES = ['Ընդունված', 'Պատրաստվում է', 'Ավարտված'];
-    if (!VALID_STATUSES.includes(newStatus)) return res.status(400).json({ error: "Անվավեր status" });
+app.post('/admin/update-order-status', adminJWTAuth, (req, res) => {
+    const { orderId, newStatus } = req.body;
+    const VALID_STATUSES = ['Ընդունված', 'Պատրաստվում է', 'Ավարտված'];
+    if (!VALID_STATUSES.includes(newStatus)) return res.status(400).json({ error: "Անվավեր status" });
 
-    const db = await readDB();
-    const idx = db.orders.findIndex(o => o.id == orderId);
-    if (idx === -1) return res.status(404).json({ error: "Order not found" });
+    const db = readDB();
+    const idx = db.orders.findIndex(o => o.id == orderId);
+    if (idx === -1) return res.status(404).json({ error: "Order not found" });
 
-    db.orders[idx].status = newStatus;
-    await writeDB(db);
-    res.json({ success: true });
+    db.orders[idx].status = newStatus;
+    writeDB(db);
+    res.json({ success: true });
 });
 
-app.get('/admin/messages', adminJWTAuth, async (req, res) => {
-    const db = await readDB();
-    const grouped = {};
-    (db.messages || []).forEach(m => {
-        if (!grouped[m.email]) {
-            grouped[m.email] = { email: m.email, name: m.name, messages: [] };
-        }
-        grouped[m.email].messages.push(m);
-    });
-    res.json(Object.values(grouped));
+app.get('/admin/messages', adminJWTAuth, (req, res) => {
+    const db = readDB();
+    const grouped = {};
+    (db.messages || []).forEach(m => {
+        if (!grouped[m.email]) {
+            grouped[m.email] = { email: m.email, name: m.name, messages: [] };
+        }
+        grouped[m.email].messages.push(m);
+    });
+    res.json(Object.values(grouped));
 });
 
-app.get('/admin/users', adminJWTAuth, async (req, res) => {
-    const db = await readDB();
-    res.json(db.users.map(({ pin, ...u }) => u));
+app.get('/admin/users', adminJWTAuth, (req, res) => {
+    const db = readDB();
+    res.json(db.users.map(({ pin, ...u }) => u));
 });
 
-app.post('/admin/send-message', adminJWTAuth, chatLimiter, upload.single('attachment'), async (req, res) => {
-    const db = await readDB();
-    const email   = req.body.email ? req.body.email.toLowerCase().trim() : null;
-    const message = req.body.message || req.body.text || "";
+app.post('/admin/send-message', adminJWTAuth, chatLimiter, upload.single('attachment'), (req, res) => {
+    const db = readDB();
+    const email   = req.body.email ? req.body.email.toLowerCase().trim() : null;
+    const message = req.body.message || req.body.text || "";
 
-    if (!email) return res.json({ error: "email պարտադիր է" });
+    if (!email) return res.status(400).json({ error: "email պարտադիր է" });
 
-    const user = db.users.find(u => u.email === email);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    const user = db.users.find(u => u.email === email);
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    let attachment = null;
-    if (req.file) {
-        attachment = { name: req.file.originalname, url: `/uploads/${req.file.filename}` };
-    }
+    let attachment = null;
+    if (req.file) {
+        attachment = { name: req.file.originalname, url: `/uploads/${req.file.filename}` };
+    }
 
-    if (!message.trim() && !attachment) return res.status(400).json({ error: "Հաղորդագրություն կամ ֆայլ պարտադիր է" });
+    if (!message.trim() && !attachment) return res.status(400).json({ error: "Հաղորդագրություն կամ ֆայլ պարտադիր է" });
 
-    const newMsg = {
-        id: Date.now(),
-        name: "Techno Lab",
-        email,
-        pin: user.pin,
-        message: message.substring(0, 2000),
-        sender: 'admin',
-        attachment,
-        date: new Date().toLocaleString()
-    };
-    db.messages.push(newMsg);
-    await writeDB(db);
-    res.json({ success: true });
+    const newMsg = {
+        id: Date.now(),
+        name: "Techno Lab",
+        email,
+        pin: user.pin,
+        message: message.substring(0, 2000),
+        sender: 'admin',
+        attachment,
+        date: new Date().toLocaleString()
+    };
+    db.messages.push(newMsg);
+    writeDB(db);
+    res.json({ success: true });
 });
 
 // ─── ERROR HANDLER ─────────────────────────────────────
 app.use((err, req, res, next) => {
-    if (err.code === 'LIMIT_FILE_SIZE') {
-        return res.status(413).json({ error: "Ֆայլը շատ մեծ է (max 50MB)" });
-    }
-    if (err.message === 'Ֆայլի տեսակը չի թույլատրվում') {
-        return res.status(415).json({ error: err.message });
-    }
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+    if (err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: "Ֆայլը շատ մեծ է (max 50MB)" });
+    }
+    if (err.message === 'Ֆայլի տեսակը չի թույլատրվում') {
+        return res.status(415).json({ error: err.message });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
 });
 
 // ─── START ─────────────────────────────────────────────
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'Market.html'));
+    res.sendFile(path.join(__dirname, 'Market.html')); // Ուղիղ ֆայլը
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, '0.0.0.0', () => {
-    console.log("-----------------------------------------");
-    console.log("🚀 Techno Lab Server is running!");
-    console.log(`🌐 http://localhost:${PORT}`);
-    console.log("-----------------------------------------");
+    console.log("-----------------------------------------");
+    console.log("🚀 Techno Lab Server is running!");
+    console.log(`🌐 http://localhost:${PORT}`);
+    console.log("-----------------------------------------");
 });
