@@ -8,21 +8,19 @@ const helmet = require('helmet');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 
-// ՓՈՓՈԽՎԱԾ. Ավելացված է pg գրադարանը (պետք է անել npm install pg)
+// ՓՈՓՈԽՎԱԾ. Ավելացված է pg գրադարանը
 const { Pool } = require('pg');
-const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL }) : null;
+const pool = process.env.DATABASE_URL ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } }) : null;
 
 const app = express();
 
-// --- ՈՒՂՂՈՒՄ. Render-ի ֆայլային համակարգի կարգավորում ---
 const isRender = process.env.RENDER === 'true'; 
 const UPLOADS_DIR = path.join(__dirname, 'uploads');
-// Ստեղծում ենք թղթապանակը, եթե չկա
 if (!fs.existsSync(UPLOADS_DIR)) {
     fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-app.use(express.static(__dirname)); // Սա բեռնում է ամեն ինչ նույն թղթապանակից
+app.use(express.static(__dirname)); 
 app.use('/uploads', express.static(UPLOADS_DIR));
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -44,7 +42,7 @@ const ALLOWED_EXTENSIONS = ['.stl', '.obj', '.glb', '.gltf', '.3mf', '.jpg', '.j
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
-        cb(null, UPLOADS_DIR); // օգտագործում ենք սահմանված UPLOADS_DIR-ը
+        cb(null, UPLOADS_DIR);
     },
     filename: (req, file, cb) => {
         const safeName = Date.now() + '-' + file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -84,7 +82,6 @@ const strictRateLimiter = rateLimit({
     message: { error: "Too many requests. Please slow down." }
 });
 
-// ✅ ADMIN BRUTEFORCE PROTECTION
 const adminBruteforceLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 5,
@@ -93,7 +90,6 @@ const adminBruteforceLimiter = rateLimit({
     keyGenerator: (req) => req.ip || req.connection.remoteAddress
 });
 
-// ✅ Failed attempts tracking
 const failedAttempts = new Map();
 
 function checkAndBlockIP(ip) {
@@ -134,9 +130,14 @@ function clearFailedAttempts(ip) {
 }
 
 // ─── DB (ՓՈՓՈԽՎԱԾ) ────────────────────────────────────────────────
-const readDB = () => {
-    // Եթե Postgres-ը միացված է, կարող ես հարցում անել այստեղ, 
-    // բայց սկզբնական կոդը պահելու համար մնում է ֆայլայինը:
+const readDB = async () => {
+    if (pool) {
+        const { rows: products } = await pool.query('SELECT * FROM products');
+        const { rows: orders } = await pool.query('SELECT * FROM orders');
+        const { rows: users } = await pool.query('SELECT * FROM users');
+        const { rows: messages } = await pool.query('SELECT * FROM messages');
+        return { products, orders, users, messages };
+    }
     if (!fs.existsSync(DB_FILE)) {
         const init = { products: [], orders: [], users: [], messages: [] };
         fs.writeFileSync(DB_FILE, JSON.stringify(init, null, 2));
@@ -149,12 +150,9 @@ const readDB = () => {
     return data;
 };
 
-const writeDB = (data) => {
+const writeDB = async (data) => {
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
-    // Ավելացրու PostgreSQL-ի հետ սինխրոնիզացիան այստեղ, օրինակ՝
-    if (pool) { /* pool.query(...) */ }
 };
-
 // ─── ADMIN AUTH ────────────────────────────────────────
 const adminAuth = (req, res, next) => {
     const token = req.headers['x-admin-token'];
@@ -220,12 +218,12 @@ app.post('/admin/login', adminBruteforceLimiter, (req, res) => {
 });
 
 // ─── PRODUCTS ──────────────────────────────────────────
-app.get('/products', (req, res) => {
-    const db = readDB();
+app.get('/products', async (req, res) => {
+    const db = await readDB();
     res.json(db.products);
 });
 
-app.post('/products', adminJWTAuth, upload.single('image'), (req, res) => {
+app.post('/products', adminJWTAuth, upload.single('image'), async (req, res) => {
     const { title, desc, cat, price } = req.body;
     if (!title || !price) return res.status(400).json({ error: "title և price պարտադիր են" });
 
@@ -234,7 +232,7 @@ app.post('/products', adminJWTAuth, upload.single('image'), (req, res) => {
         imgUrl = `/uploads/${req.file.filename}`;
     }
 
-    const db = readDB();
+    const db = await readDB();
     const newProduct = {
         id: Date.now(),
         title: title.substring(0, 200),
@@ -244,28 +242,28 @@ app.post('/products', adminJWTAuth, upload.single('image'), (req, res) => {
         img: imgUrl
     };
     db.products.push(newProduct);
-    writeDB(db);
+    await writeDB(db);
     res.json(newProduct);
 });
 
-app.delete('/products/:id', adminJWTAuth, (req, res) => {
-    const db = readDB();
+app.delete('/products/:id', adminJWTAuth, async (req, res) => {
+    const db = await readDB();
     const product = db.products.find(p => p.id == req.params.id);
     if (product && product.img && product.img.startsWith('/uploads/')) {
         const filePath = path.join(UPLOADS_DIR, path.basename(product.img));
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
     }
     db.products = db.products.filter(p => p.id != req.params.id);
-    writeDB(db);
+    await writeDB(db);
     res.json({ success: true });
 });
 
 // ─── CLIENT AUTH ───────────────────────────────────────
-app.post('/register-client', loginLimiter, (req, res) => {
+app.post('/register-client', loginLimiter, async (req, res) => {
     const { name, email } = req.body;
     if (!name || !email) return res.status(400).json({ success: false, message: "Անուն և email պարտադիր են" });
     const cleanEmail = email.toLowerCase().trim();
-    const db = readDB();
+    const db = await readDB();
 
     if (db.users.find(u => u.email === cleanEmail)) {
         return res.status(400).json({ success: false, message: "Այս էլ. փոստը արդեն գրանցված է" });
@@ -274,14 +272,14 @@ app.post('/register-client', loginLimiter, (req, res) => {
     const newPin = Math.floor(1000 + Math.random() * 9000).toString();
     const user = { id: Date.now(), name: name.substring(0, 60), email: cleanEmail, pin: newPin, regDate: new Date().toLocaleString() };
     db.users.push(user);
-    writeDB(db);
+    await writeDB(db);
     res.json({ success: true, pin: newPin });
 });
 
-app.post('/login-client', loginLimiter, (req, res) => {
+app.post('/login-client', loginLimiter, async (req, res) => {
     const { email, pin } = req.body;
     if (!email || !pin) return res.status(400).json({ success: false, message: "email և pin պարտադիր են" });
-    const db = readDB();
+    const db = await readDB();
     const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
     if (user) {
         res.json({ success: true, name: user.name });
@@ -290,10 +288,10 @@ app.post('/login-client', loginLimiter, (req, res) => {
     }
 });
 
-app.post('/login-client-jwt', loginLimiter, (req, res) => {
+app.post('/login-client-jwt', loginLimiter, async (req, res) => {
     const { email, pin } = req.body;
     if (!email || !pin) return res.status(400).json({ success: false, message: "email և pin պարտադիր են" });
-    const db = readDB();
+    const db = await readDB();
     const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
     if (user) {
         const token = jwt.sign(
@@ -307,8 +305,8 @@ app.post('/login-client-jwt', loginLimiter, (req, res) => {
     }
 });
 
-app.get('/my-orders/:email', (req, res) => {
-    const db = readDB();
+app.get('/my-orders/:email', async (req, res) => {
+    const db = await readDB();
     const email = req.params.email.toLowerCase().trim();
     const pin = req.query.pin;
     if (!pin) return res.status(400).json({ error: "PIN պարտադիր է" });
@@ -318,11 +316,11 @@ app.get('/my-orders/:email', (req, res) => {
     res.json(userOrders);
 });
 
-app.post('/orders', strictRateLimiter, (req, res) => {
+app.post('/orders', strictRateLimiter, async (req, res) => {
     const { customer, email, pin, items, total } = req.body;
     if (!email || !pin) return res.status(400).json({ error: "email և pin պարտադիր են" });
 
-    const db = readDB();
+    const db = await readDB();
 
     const user = db.users.find(u => u.email === email.toLowerCase().trim() && u.pin === pin);
     if (!user) return res.status(401).json({ error: "Սխալ email կամ PIN" });
@@ -342,13 +340,13 @@ app.post('/orders', strictRateLimiter, (req, res) => {
         status: 'Ընդունված'
     };
     db.orders.push(newOrder);
-    writeDB(db);
+    await writeDB(db);
     res.json({ success: true });
 });
 
 // ─── MESSAGES ──────────────────────────────────────────
-app.post('/messages', chatLimiter, upload.single('attachment'), (req, res) => {
-    const db = readDB();
+app.post('/messages', chatLimiter, upload.single('attachment'), async (req, res) => {
+    const db = await readDB();
     const email = req.body.email ? req.body.email.toLowerCase().trim() : null;
     const pin   = req.body.pin || null;
 
@@ -376,12 +374,12 @@ app.post('/messages', chatLimiter, upload.single('attachment'), (req, res) => {
         date: new Date().toLocaleString()
     };
     db.messages.push(newMessage);
-    writeDB(db);
+    await writeDB(db);
     res.json({ success: true });
 });
 
-app.get('/my-messages/:email', (req, res) => {
-    const db = readDB();
+app.get('/my-messages/:email', async (req, res) => {
+    const db = await readDB();
     const clientEmail = req.params.email.toLowerCase().trim();
     const clientPin   = req.query.pin;
     if (!clientPin) return res.status(400).json({ error: "PIN պարտադիր է" });
@@ -394,26 +392,26 @@ app.get('/my-messages/:email', (req, res) => {
 });
 
 // ─── ADMIN ENDPOINTS ───────────────────────────────────
-app.get('/admin/orders', adminJWTAuth, (req, res) => {
-    res.json(readDB().orders);
+app.get('/admin/orders', adminJWTAuth, async (req, res) => {
+    res.json((await readDB()).orders);
 });
 
-app.post('/admin/update-order-status', adminJWTAuth, (req, res) => {
+app.post('/admin/update-order-status', adminJWTAuth, async (req, res) => {
     const { orderId, newStatus } = req.body;
     const VALID_STATUSES = ['Ընդունված', 'Պատրաստվում է', 'Ավարտված'];
     if (!VALID_STATUSES.includes(newStatus)) return res.status(400).json({ error: "Անվավեր status" });
 
-    const db = readDB();
+    const db = await readDB();
     const idx = db.orders.findIndex(o => o.id == orderId);
     if (idx === -1) return res.status(404).json({ error: "Order not found" });
 
     db.orders[idx].status = newStatus;
-    writeDB(db);
+    await writeDB(db);
     res.json({ success: true });
 });
 
-app.get('/admin/messages', adminJWTAuth, (req, res) => {
-    const db = readDB();
+app.get('/admin/messages', adminJWTAuth, async (req, res) => {
+    const db = await readDB();
     const grouped = {};
     (db.messages || []).forEach(m => {
         if (!grouped[m.email]) {
@@ -424,17 +422,17 @@ app.get('/admin/messages', adminJWTAuth, (req, res) => {
     res.json(Object.values(grouped));
 });
 
-app.get('/admin/users', adminJWTAuth, (req, res) => {
-    const db = readDB();
+app.get('/admin/users', adminJWTAuth, async (req, res) => {
+    const db = await readDB();
     res.json(db.users.map(({ pin, ...u }) => u));
 });
 
-app.post('/admin/send-message', adminJWTAuth, chatLimiter, upload.single('attachment'), (req, res) => {
-    const db = readDB();
+app.post('/admin/send-message', adminJWTAuth, chatLimiter, upload.single('attachment'), async (req, res) => {
+    const db = await readDB();
     const email   = req.body.email ? req.body.email.toLowerCase().trim() : null;
     const message = req.body.message || req.body.text || "";
 
-    if (!email) return res.status(400).json({ error: "email պարտադիր է" });
+    if (!email) return res.json({ error: "email պարտադիր է" });
 
     const user = db.users.find(u => u.email === email);
     if (!user) return res.status(404).json({ error: "User not found" });
@@ -457,7 +455,7 @@ app.post('/admin/send-message', adminJWTAuth, chatLimiter, upload.single('attach
         date: new Date().toLocaleString()
     };
     db.messages.push(newMsg);
-    writeDB(db);
+    await writeDB(db);
     res.json({ success: true });
 });
 
@@ -475,7 +473,7 @@ app.use((err, req, res, next) => {
 
 // ─── START ─────────────────────────────────────────────
 app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'Market.html')); // Ուղիղ ֆայլը
+    res.sendFile(path.join(__dirname, 'Market.html'));
 });
 
 const PORT = process.env.PORT || 3000;
