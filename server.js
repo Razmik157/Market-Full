@@ -219,8 +219,14 @@ app.post('/admin/login', adminBruteforceLimiter, (req, res) => {
 
 // ─── PRODUCTS ──────────────────────────────────────────
 app.get('/products', async (req, res) => {
-    const db = await readDB();
-    res.json(db.products);
+    try {
+        // Անմիջապես կարդում ենք PostgreSQL-ից
+        const { rows } = await pool.query('SELECT * FROM products');
+        res.json(rows);
+    } catch (err) {
+        console.error("GET Products error:", err);
+        res.status(500).json({ error: "Չհաջողվեց կարդալ բազայից" });
+    }
 });
 
 app.post('/products', adminJWTAuth, upload.single('image'), async (req, res) => {
